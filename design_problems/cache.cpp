@@ -4,9 +4,10 @@ using namespace std;
 template<typename K>
 class EvictionPolicy{
 public:
-virtual ~EvictionPolicy() = default;
+    virtual ~EvictionPolicy() = default;
     virtual void keyAccessed(K key) = 0;
     virtual K evictKey() = 0;
+    virtual void dropKey(K key) = 0;
 };
 
 template<typename K>
@@ -14,63 +15,51 @@ class LRUEvictionPolicy: public EvictionPolicy<K>{
     class Node{
     public:
         K key;
-        Node* next;
-        Node* prev;
+        shared_ptr<Node> next, prev;
 
-        Node(K key, Node* next, Node* prev){
-            this->key = key;
-            this->next = next;
-            this->prev = prev;
-        }
-
-        Node(K key){
-            this->key = key;
-            this->next = nullptr;
-            this->prev = nullptr;
-        }
+        Node(K key, shared_ptr<Node> next = nullptr, shared_ptr<Node> prev = nullptr)
+            : key(key), next(next), prev(prev) {}
     };
 
-    Node* head;
-    Node* tail;
-    map<K, Node*> pos;
+    shared_ptr<Node> head, tail;
+    unordered_map<K, shared_ptr<Node>> pos;
+    mutex mtx;
 
-    void deleteNode(Node* node, bool free_memory = false){
-        Node* nextNode = node->next;
-        Node* prevNode = node->prev;
+    void deleteNode(shared_ptr<Node> node){
+        auto nextNode = node->next;
+        auto prevNode = node->prev;
 
-        prevNode->next = nextNode;
         nextNode->prev = prevNode;
+        prevNode->next = nextNode;
 
-        if(free_memory)
-            delete node;
+        node->next = node->prev = nullptr;
     }
 
-    void moveToFront(Node* node){
-        Node* firstNode = head->next;
-        firstNode->prev = node;
+    void moveToFront(shared_ptr<Node> node){
+        auto firstNode = head->next;
+
+        node->next = firstNode;
+        node->prev = head;
 
         head->next = node;
-        node->next = firstNode;
-
-        node->prev = head;
+        firstNode->prev = node;
     }
-
-    mutex mtx;
 
 public:
     LRUEvictionPolicy(){
-        head = new Node(K{});
-        tail = new Node(K{});
+        head = make_shared<Node>(K{});
+        tail = make_shared<Node>(K{});
 
         head->next = tail;
         tail->prev = head;
     }
 
     void keyAccessed(K key){
-        lock_guard<mutex> lock(mtx);
-        Node* it;
-        if(!pos.count(key))
-            it = new Node(key);
+        unique_lock<mutex> lock(mtx);
+        shared_ptr<Node> it;
+        if(!pos.count(key)){
+            it = make_shared<Node>(key); 
+        }
         else{
             it = pos[key];
             deleteNode(it);
@@ -81,15 +70,27 @@ public:
     }
 
     K evictKey(){
-        lock_guard<mutex> lock(mtx);
-        auto lru = tail->prev;
+        unique_lock<mutex> lock(mtx);
+        shared_ptr<Node> lru = tail->prev;
+
         if(lru == head)
-            throw logic_error("key not found");
-        K key  = lru->key;
-        deleteNode(lru, true);
-        pos.erase(key);
-        return key;
+            throw logic_error("No keys to evict");
+
+        deleteNode(lru);
+        pos.erase(lru->key);
+
+        return lru->key;
     }
+
+    void dropKey(K key){
+        unique_lock<mutex> lock(mtx);
+        if(pos.count(key)){
+            auto it = pos[key];
+            deletNode(it);
+            pos.erase(it->key);
+        }
+    }
+
 };
 
 template <typename K, typename V>
@@ -141,9 +142,10 @@ class Cache{
     shared_ptr<EvictionPolicy<K>> evictionPolicy;
     int capacity;
     array<shared_mutex, 10> locks;
+    hash<K> hashfn;
     
     shared_mutex& getLock(const K& key){
-        int idx = hash<K>{}(key)%10;
+        int idx = hashfn(key)%10;
         return locks[idx];
     }    
 
@@ -151,7 +153,7 @@ public:
     Cache( shared_ptr<CacheStorage<K,V>> cache, shared_ptr<EvictionPolicy<K>> evictionPolicy, int capacity = 10): cache(cache), evictionPolicy(evictionPolicy), capacity(capacity) {}
 
     void put(K key, V value){
-        K evicted;
+        optional<K> evicted;
         {
             unique_lock<shared_mutex> lock(getLock(key));
             cache->put(key, value);
@@ -160,10 +162,10 @@ public:
                 evicted = evictionPolicy->evictKey();
             }
         }
-        if(evicted){
-            unique_lock<shared_mutex> lock(getLock(evicted)); // get next lock
-            cache->remove(evicted);
-            cout<< evicted << " key evicted"<< endl;
+
+        if(evicted.has_value()){
+            this->remove(evicted.value());
+            // cout<< *evicted << " key evicted"<< endl;
         }
     }
 
@@ -181,8 +183,10 @@ public:
 
     void remove(K key){
         unique_lock<shared_mutex> lock(getLock(key));
-        if(cache->contains(key))
+        if(cache->contains(key)){
             cache->remove(key);
+            evictionPolicy->dropKey(key);
+        }
     }
 
 };
