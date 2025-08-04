@@ -171,7 +171,7 @@ public:
     map<int, User> users;
 
     static shared_ptr<RentalSystem> getInstance(){
-        static auto instance = make_shared<RentalSystem>(new RentalSystem());
+        static auto instance = shared_ptr<RentalSystem>(new RentalSystem());
 
         return instance;
     }
@@ -196,6 +196,8 @@ public:
             auto temp = store->getAvailableVehicles();
             res.insert(res.end(),temp.begin(), temp.end());
         }
+
+        return res;
     }
     
     int makeReservation(int userId, RentalStore pickupStore, RentalStore dropStore, int startDate,int endDate,shared_ptr<Vehicle> vehicle){

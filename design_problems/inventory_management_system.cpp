@@ -6,7 +6,6 @@ enum class ProductCategory{
     FASHION
 };
 
-
 class Product{
     friend class Builder;
 public:
@@ -24,7 +23,7 @@ public:
 class Product::Builder{
     shared_ptr<Product> product;
 public:
-    Builder(): product(shared_ptr<Product>(new Product)) {}
+    Builder(shared_ptr<Product> product): product(move(product)) {}
 
     Builder& setQuantity(int quantity){
         product->quantity = quantity;
@@ -55,17 +54,21 @@ public:
 class ElectronicProduct::Builder: public Product::Builder{
     shared_ptr<ElectronicProduct> eproduct;
 public:
-    Builder(): eproduct(shared_ptr<ElectronicProduct>(new ElectronicProduct)) {}
-    string brand;
-    int warranty;
+    Builder(): Product::Builder(eproduct = shared_ptr<ElectronicProduct>(new ElectronicProduct())) {} 
+
+    // —— forwarding wrappers so method-chaining keeps the derived type ——
+    Builder& setQuantity(int q)  { Product::Builder::setQuantity(q);  return *this; }
+    Builder& setCategory(ProductCategory c){ Product::Builder::setCategory(c); return *this; }
+    Builder& setPrice(double p)  { Product::Builder::setPrice(p);     return *this; }
+
 
     Builder& setBrand(string brand){
-        this->brand = brand;
+        eproduct->brand = brand;
         return *this;
     }
 
     Builder& setWarranty(int warranty){
-        this->warranty = warranty;
+        eproduct->warranty = warranty;
         return *this;
     }
 
@@ -88,7 +91,7 @@ public:
     int id;
     string name;
     string location;
-    map<string, shared_ptr<Product>> products;
+    map<string, shared_ptr<Product>> products; // sku -> product
 
     void addProduct(shared_ptr<Product> product, int quantity){}
     void removeProduct(shared_ptr<Product> product, int quantity){}
