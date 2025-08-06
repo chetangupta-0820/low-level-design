@@ -108,8 +108,8 @@ void IdleState::next(shared_ptr<VendingMachineContext> ctx){
 void SelectionState::next(shared_ptr<VendingMachineContext> ctx){
     if(!ctx->checkShelfInventory(ctx->selectedShelfId))
         ctx->setState(make_shared<OutOfStockState>());
-
-    ctx->setState(make_shared<PendingState>());
+    else
+        ctx->setState(make_shared<PendingState>());
 }
 
 void PendingState::next(shared_ptr<VendingMachineContext> ctx){

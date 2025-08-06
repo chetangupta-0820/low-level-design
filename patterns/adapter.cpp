@@ -13,7 +13,7 @@ public:
         cout<<"Drawing Legacy Rectangle at (" <<x<<", "<<y<<") of heigth "<<w<<"*"<<h<<endl;
     }
 };
-
+                                   
 class RectangleAdapter : public Ishape{
     shared_ptr<LegacyRectangle> adaptee;
     int x, y, w, h;

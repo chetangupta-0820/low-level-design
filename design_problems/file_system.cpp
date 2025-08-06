@@ -139,6 +139,9 @@ class FileSystem{
 
     void dfs(int ind, shared_ptr<FileSystemNode> par, vector<string> &tokens){
 
+        if(par == nullptr)
+            return;
+
         if(ind == tokens.size()-1){
             par->removeChild(tokens[ind]);
             return;
